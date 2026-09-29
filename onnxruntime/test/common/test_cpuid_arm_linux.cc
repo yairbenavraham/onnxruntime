@@ -2,8 +2,11 @@
 // Licensed under the MIT License.
 
 #include "core/common/cpuid_arm_linux.h"
-#include "core/common/cpuid_info.h"
 #include "core/common/cpuid_uarch.h"
+
+#if defined(__linux__) && defined(__aarch64__)
+#include "core/common/cpuid_info.h"
+#endif
 
 #include <cstdio>
 #include <filesystem>
@@ -14,8 +17,6 @@
 #include <vector>
 
 #include "gtest/gtest.h"
-
-#include "test/util/include/temp_dir.h"
 
 namespace onnxruntime {
 namespace test {
@@ -48,6 +49,25 @@ void WriteTextFile(const std::filesystem::path& path, std::string_view contents)
 std::filesystem::path MidrPath(const std::filesystem::path& cpu_root, int cpu_id) {
   return cpu_root / ("cpu" + std::to_string(cpu_id)) / "regs" / "identification" / "midr_el1";
 }
+
+class FakeSysfsRoot {
+ public:
+  explicit FakeSysfsRoot(std::string_view name)
+      : path_(std::filesystem::temp_directory_path() / ("ort_arm_linux_cpu_detect_" + std::string(name))) {
+    std::filesystem::remove_all(path_);
+    std::filesystem::create_directories(path_);
+  }
+
+  ~FakeSysfsRoot() { std::filesystem::remove_all(path_); }
+
+  FakeSysfsRoot(const FakeSysfsRoot&) = delete;
+  FakeSysfsRoot& operator=(const FakeSysfsRoot&) = delete;
+
+  const std::filesystem::path& Path() const { return path_; }
+
+ private:
+  std::filesystem::path path_;
+};
 
 }  // namespace
 
@@ -140,8 +160,8 @@ TEST(ArmLinuxCpuDetect, ParseLinuxCpuList) {
 }
 
 TEST(ArmLinuxCpuDetect, SysfsHomogeneousA55) {
-  TemporaryDirectory tmp{ORT_TSTR("arm_linux_cpu_detect_a55")};
-  const std::filesystem::path root{tmp.Path()};
+  FakeSysfsRoot tmp("a55");
+  const std::filesystem::path& root = tmp.Path();
   WriteTextFile(root / "possible", "0-5\n");
   for (int cpu = 0; cpu < 6; ++cpu) {
     WriteTextFile(MidrPath(root, cpu), MidrSysfsText(kMidrCortexA55));
@@ -158,8 +178,8 @@ TEST(ArmLinuxCpuDetect, SysfsHomogeneousA55) {
 }
 
 TEST(ArmLinuxCpuDetect, SysfsHomogeneousA76IsNotNarrowLd) {
-  TemporaryDirectory tmp{ORT_TSTR("arm_linux_cpu_detect_a76")};
-  const std::filesystem::path root{tmp.Path()};
+  FakeSysfsRoot tmp("a76");
+  const std::filesystem::path& root = tmp.Path();
   WriteTextFile(root / "possible", "0-3\n");
   for (int cpu = 0; cpu < 4; ++cpu) {
     WriteTextFile(MidrPath(root, cpu), MidrSysfsText(kMidrCortexA76));
@@ -175,8 +195,8 @@ TEST(ArmLinuxCpuDetect, SysfsHomogeneousA76IsNotNarrowLd) {
 }
 
 TEST(ArmLinuxCpuDetect, SysfsBigLittleMix) {
-  TemporaryDirectory tmp{ORT_TSTR("arm_linux_cpu_detect_hybrid")};
-  const std::filesystem::path root{tmp.Path()};
+  FakeSysfsRoot tmp("hybrid");
+  const std::filesystem::path& root = tmp.Path();
   WriteTextFile(root / "possible", "0-3,8-11\n");
   for (int cpu = 0; cpu < 4; ++cpu) {
     WriteTextFile(MidrPath(root, cpu), MidrSysfsText(kMidrCortexA55));
@@ -206,8 +226,8 @@ TEST(ArmLinuxCpuDetect, MissingSysfsIsConservative) {
   EXPECT_TRUE(missing.is_armv8_narrow_ld.empty());
   EXPECT_FALSE(missing.is_hybrid);
 
-  TemporaryDirectory tmp{ORT_TSTR("arm_linux_cpu_detect_missing")};
-  const std::filesystem::path root{tmp.Path()};
+  FakeSysfsRoot tmp("missing");
+  const std::filesystem::path& root = tmp.Path();
   WriteTextFile(root / "possible", "0-1\n");
   WriteTextFile(MidrPath(root, 0), "not-a-midr\n");
   // cpu1 has no midr_el1 file.
@@ -222,8 +242,8 @@ TEST(ArmLinuxCpuDetect, MissingSysfsIsConservative) {
 }
 
 TEST(ArmLinuxCpuDetect, ScansMidrFilesWhenPossibleListIsAbsent) {
-  TemporaryDirectory tmp{ORT_TSTR("arm_linux_cpu_detect_scan")};
-  const std::filesystem::path root{tmp.Path()};
+  FakeSysfsRoot tmp("scan");
+  const std::filesystem::path& root = tmp.Path();
   WriteTextFile(MidrPath(root, 0), MidrSysfsText(kMidrCortexA53));
   WriteTextFile(MidrPath(root, 2), MidrSysfsText(kMidrCortexA76));
 
@@ -235,6 +255,7 @@ TEST(ArmLinuxCpuDetect, ScansMidrFilesWhenPossibleListIsAbsent) {
   EXPECT_FALSE(topology.is_armv8_narrow_ld[2]);
 }
 
+#if defined(__linux__) && defined(__aarch64__)
 TEST(ArmLinuxCpuDetect, HostSysfsAgreesWithCPUIDInfoWhenMidrPresent) {
   const ArmLinuxCoreTopology topology = DetectArmLinuxCoreTopologyFromSysfs("/sys/devices/system/cpu");
   if (topology.core_uarchs.empty()) {
@@ -259,6 +280,7 @@ TEST(ArmLinuxCpuDetect, HostSysfsAgreesWithCPUIDInfoWhenMidrPresent) {
     }
   }
 }
+#endif  // defined(__linux__) && defined(__aarch64__)
 
 }  // namespace test
 }  // namespace onnxruntime
