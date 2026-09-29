@@ -51,7 +51,8 @@ TEST(SymmQgemmArm64Dispatch, DistinctSdotLitAndBigKernels) {
 
 class SymmQgemmArm64DispatchTest : public MlasTestFixture<MlasSymmQgemmTest<int8_t, int32_t, false>> {
  public:
-  enum class Kernel { Lit, Big };
+  enum class Kernel { Lit,
+                      Big };
 
   SymmQgemmArm64DispatchTest(size_t M, size_t N, size_t K, size_t Batch, int32_t offa, Kernel kernel,
                              bool signed_input)
