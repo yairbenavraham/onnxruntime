@@ -95,6 +95,14 @@ MLASCPUIDInfo::MLASCPUIDInfo()
 #include <asm/hwcap.h>
 // N.B. Support building with older versions of asm/hwcap.h that do not define
 // this capability bit.
+#ifndef HWCAP_FPHP
+#define HWCAP_FPHP (1 << 9)
+#endif
+
+#ifndef HWCAP_ASIMDHP
+#define HWCAP_ASIMDHP (1 << 10)
+#endif
+
 #ifndef HWCAP_ASIMDDP
 #define HWCAP_ASIMDDP (1 << 20)
 #endif
@@ -116,8 +124,9 @@ MLASCPUIDInfo::MLASCPUIDInfo()
 {
     has_arm_neon_dot_ = ((getauxval(AT_HWCAP) & HWCAP_ASIMDDP) != 0);
 
-    // raw hack! Need CPUIDInfo implementation for more precise detection
-    has_fp16_ = has_arm_neon_dot_;
+    // NEON FP16 arithmetic requires both scalar and SIMD half-precision hwcaps.
+    has_fp16_ = ((getauxval(AT_HWCAP) & (HWCAP_FPHP | HWCAP_ASIMDHP)) ==
+                 (HWCAP_FPHP | HWCAP_ASIMDHP));
 
     has_arm_neon_i8mm_ = ((getauxval(AT_HWCAP2) & HWCAP2_I8MM) != 0);
     has_arm_sve_i8mm_ = ((getauxval(AT_HWCAP2) & HWCAP2_SVEI8MM) != 0);

@@ -181,10 +181,8 @@ enum CPUIDINFOuarch {
   cpuinfo_uarch_taishan_v110 = 0x00C00100,
 };
 
-#if defined(CPUIDINFO_ARCH_ARM)
-
+// MIDR decoding is architecture-independent bit matching so it can be unit-tested
+// on any host. Callers must initialize *uarch (typically to cpuinfo_uarch_unknown).
 void decodeMIDR(uint32_t midr, uint32_t uarch[1]);
-
-#endif  // arm or arm64
 
 }  // namespace onnxruntime

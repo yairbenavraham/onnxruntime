@@ -8,8 +8,6 @@
 
 namespace onnxruntime {
 
-#if defined(CPUIDINFO_ARCH_ARM)
-
 #define CPUINFO_ARM_MIDR_IMPLEMENTER_MASK UINT32_C(0xFF000000)
 #define CPUINFO_ARM_MIDR_VARIANT_MASK UINT32_C(0x00F00000)
 #define CPUINFO_ARM_MIDR_ARCHITECTURE_MASK UINT32_C(0x000F0000)
@@ -367,7 +365,5 @@ void decodeMIDR(
       // std::cerr << "unknown CPU uarch from MIDR value: 0x" << std::hex << midr << "\n";
   }
 }
-
-#endif  // arm or arm64
 
 }  // namespace onnxruntime

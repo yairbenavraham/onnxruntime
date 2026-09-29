@@ -6,6 +6,9 @@
 #include <iostream>
 #include <optional>
 
+#if defined(CPUIDINFO_ARCH_ARM)
+#include "core/common/cpuid_arm_linux.h"
+#endif
 #include "core/common/logging/logging.h"
 #include "core/common/logging/severity.h"
 #include "core/platform/check_intel.h"
@@ -26,6 +29,14 @@
 #include <asm/hwcap.h>
 // N.B. Support building with older versions of asm/hwcap.h that do not define
 // this capability bit.
+#ifndef HWCAP_FPHP
+#define HWCAP_FPHP (1 << 9)
+#endif
+
+#ifndef HWCAP_ASIMDHP
+#define HWCAP_ASIMDHP (1 << 10)
+#endif
+
 #ifndef HWCAP_ASIMDDP
 #define HWCAP_ASIMDDP (1 << 20)
 #endif
@@ -201,6 +212,14 @@ void CPUIDInfo::X86Init() {
 #if defined(__linux__)
 
 void CPUIDInfo::ArmLinuxInit() {
+  static_assert(kArmLinuxHwcapFpHp == HWCAP_FPHP);
+  static_assert(kArmLinuxHwcapAsimdHp == HWCAP_ASIMDHP);
+  static_assert(kArmLinuxHwcapAsimdDp == HWCAP_ASIMDDP);
+  static_assert(kArmLinuxHwcapSve == HWCAP_SVE);
+  static_assert(kArmLinuxHwcap2SveI8mm == HWCAP2_SVEI8MM);
+  static_assert(kArmLinuxHwcap2I8mm == HWCAP2_I8MM);
+  static_assert(kArmLinuxHwcap2Bf16 == HWCAP2_BF16);
+
   has_arm_sve2p1_ = ((getauxval(AT_HWCAP2) & HWCAP2_SVE2P1) != 0);
 
   // Assuming no hyper-threading, no NUMA groups
@@ -236,22 +255,25 @@ void CPUIDInfo::ArmLinuxInit() {
 
       auto uarch = corep->uarch;
       core_uarchs_[coreid] = uarch;
-      if (uarch == cpuinfo_uarch_cortex_a53 || uarch == cpuinfo_uarch_cortex_a55r0 ||
-          uarch == cpuinfo_uarch_cortex_a55) {
+      if (IsArmv8NarrowLdUarch(uarch)) {
         is_armv8_narrow_ld_[coreid] = true;
       }
     }
   } else
 #endif  // defined(CPUINFO_SUPPORTED)
   {
-    has_arm_neon_dot_ = ((getauxval(AT_HWCAP) & HWCAP_ASIMDDP) != 0);
-    has_fp16_ |= has_arm_neon_dot_;
+    const ArmLinuxHwcapFeatures features = ParseArmLinuxHwcap(getauxval(AT_HWCAP), getauxval(AT_HWCAP2));
+    has_arm_neon_dot_ = features.has_arm_neon_dot;
+    has_fp16_ = features.has_fp16;
+    has_arm_neon_i8mm_ = features.has_arm_neon_i8mm;
+    has_arm_sve_ = features.has_arm_sve;
+    has_arm_sve_i8mm_ = features.has_arm_sve_i8mm;
+    has_arm_neon_bf16_ = features.has_arm_neon_bf16;
 
-    has_arm_neon_i8mm_ = ((getauxval(AT_HWCAP2) & HWCAP2_I8MM) != 0);
-    has_arm_sve_ = ((getauxval(AT_HWCAP) & HWCAP_SVE) != 0);
-    has_arm_sve_i8mm_ = ((getauxval(AT_HWCAP2) & HWCAP2_SVEI8MM) != 0);
-
-    has_arm_neon_bf16_ = ((getauxval(AT_HWCAP2) & HWCAP2_BF16) != 0);
+    const ArmLinuxCoreTopology topology = DetectArmLinuxCoreTopologyFromSysfs("/sys/devices/system/cpu");
+    core_uarchs_ = topology.core_uarchs;
+    is_armv8_narrow_ld_ = topology.is_armv8_narrow_ld;
+    is_hybrid_ = topology.is_hybrid;
   }
 
   has_arm_sve_ = has_arm_sve_ || has_arm_sve2p1_;
@@ -305,12 +327,7 @@ void CPUIDInfo::ArmWindowsInit() {
       uint32_t uarch = cpuinfo_uarch_unknown;
       decodeMIDR(static_cast<uint32_t>(midr_values[i]), &uarch);
       core_uarchs_.push_back(uarch);
-      if (uarch == cpuinfo_uarch_cortex_a53 || uarch == cpuinfo_uarch_cortex_a55r0 ||
-          uarch == cpuinfo_uarch_cortex_a55) {
-        is_armv8_narrow_ld_.push_back(true);
-      } else {
-        is_armv8_narrow_ld_.push_back(false);
-      }
+      is_armv8_narrow_ld_.push_back(IsArmv8NarrowLdUarch(uarch));
 
       if (i == 0) {
         lastUarch = uarch;
